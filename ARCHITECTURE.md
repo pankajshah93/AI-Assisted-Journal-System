@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — MindGrove
 
-This document answers the four required architecture questions, plus the extra advanced-topic design (Redis, Kafka, CI/CD, multi-user) the project roadmap adds on top of the MVP.
+This document covers the core architecture decisions — scaling, LLM cost, caching, and data protection — plus the extra advanced-topic design (Redis, Kafka, CI/CD, multi-user) layered on top of the base system.
 
 ---
 
@@ -49,7 +49,7 @@ Journal entries are inherently sensitive personal/mental-health-adjacent data, s
 
 - **Encryption in transit:** HTTPS/TLS everywhere (enforced by the hosting platform — Render/Vercel do this by default).
 - **Encryption at rest:** enable Postgres disk encryption (managed providers like Supabase/Neon do this by default); consider application-level encryption of the `text` column (e.g. AES-256, key from a secrets manager) for an extra layer beyond disk encryption.
-- **Auth & isolation:** JWT-authenticated requests; every query for entries/insights is scoped by the authenticated `user_id` from the token — never trust a `userId` passed in the request body/path directly (the MVP spec's plain `userId` field is fine for grading, but in a real multi-user system it must come from a verified token, not client input).
+- **Auth & isolation:** JWT-authenticated requests; every query for entries/insights is scoped by the authenticated `user_id` from the token — never trust a `userId` passed in the request body/path directly (a plain `userId` field is fine for an early prototype, but in a real multi-user system it must come from a verified token, not client input).
 - **Least-privilege DB access:** the API's DB user should only have the grants it needs (no `DROP`/`ALTER` in production).
 - **Secrets management:** API keys (OpenRouter, JWT secret, DB URL) live in environment variables / a secrets manager (Render/Railway secrets, GitHub Actions secrets for CI) — never committed to the repo.
 - **Data minimization with the LLM provider:** send only the journal text needed for analysis, not user identifiers, to OpenRouter — the LLM call should be anonymous with respect to who the user is.
