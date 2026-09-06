@@ -1,6 +1,6 @@
 # 🌿 MindGrove — AI-Assisted Journal & Emotion Insight Platform
 
-MindGrove lets users complete immersive nature sessions (forest / ocean / mountain), write a journal entry afterward, and get LLM-powered emotional insight into their own mental state over time. This README covers the full build plan, tech stack, setup, and a phase-by-phase roadmap — written so you can build it, learn every underlying concept, and explain the whole flow confidently in interviews.
+MindGrove lets users complete immersive nature sessions (forest / ocean / mountain), write a journal entry afterward, and get LLM-powered emotional insight into their own mental state over time. This README covers the full build plan, tech stack, setup, and a phase-by-phase roadmap.
 
 ---
 
@@ -14,7 +14,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 ## 2. Feature List
 
-### MVP (core, must-have)
+### Core Features
 - [ ] Journal entry creation (`POST /api/journal`)
 - [ ] Fetch all entries for a user (`GET /api/journal/:userId`)
 - [ ] LLM emotion analysis on a journal entry (`POST /api/journal/analyze`) — real LLM call, not hardcoded output
@@ -22,7 +22,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 - [ ] Minimal frontend: write entry → view entries → click Analyze → view insights
 - [ ] `README.md` + `ARCHITECTURE.md`
 
-### Bonus (score boosters)
+### Extended Features
 - [ ] Streaming LLM response (token-by-token on the frontend)
 - [ ] Caching analysis results (Redis)
 - [ ] Rate limiting (per-user, per-IP)
@@ -287,21 +287,20 @@ docker compose up --build
 8. **Dockerize** — Dockerfile per service + `docker-compose.yml`.
 9. **CI/CD** — GitHub Actions workflow: install → lint → test → build → deploy.
 10. **Deploy** — backend to Render/Railway, frontend to Vercel, DB to Supabase/Neon, Redis to Upstash.
-11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's the piece that's optional for the MVP but valuable for your own understanding of async architectures.
+11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's optional for the MVP but valuable for understanding async architectures.
 
 Building in this order means you always have something *runnable* at every step, which keeps momentum up and makes the project easy to demo at any point.
 
 ---
 
-## 11. Interview Talking Points (so you can explain 0 → advanced)
+## 11. Design Rationale
 
 - **Why separate `analysis_results` from `journal_entries`?** Keeps the write path fast and lets you re-run/version analysis without touching source data.
 - **Why cache in Redis instead of just relying on Postgres?** Sub-millisecond reads for repeated identical text, and it takes load off both Postgres and OpenRouter (cost + latency).
 - **Why Kafka instead of just calling the LLM inline?** At scale, LLM calls are the slowest and least reliable part of the request — decoupling means a slow/failed LLM call never blocks the user's journal save, and you can retry/backoff independently.
 - **Why JWT over sessions?** Stateless auth scales horizontally without sticky sessions or a shared session store.
-- **What breaks first at 100k users, and how do you know?** (See `ARCHITECTURE.md` — this is the exact kind of question interviewers ask.)
 
-See `ARCHITECTURE.md` for the full scaling / cost / caching / security answers.
+See `ARCHITECTURE.md` for the full scaling / cost / caching / security details.
 
 ---
 
