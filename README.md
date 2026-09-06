@@ -8,7 +8,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 - Structured from day one as a real product you can grow into a startup, not just a demo.
 - Core loop: **Session → Journal → AI Analysis → Insights over time.**
-- Designed to scale from "1 user on your laptop" to "100k users in production" without a rewrite — that's why Redis, Kafka, and CI/CD show up in the roadmap even though they're optional for the MVP.
+- Designed to scale from "1 user on your laptop" to "100k users in production" without a rewrite — that's why Redis, Kafka, and CI/CD show up in the roadmap even though they're optional for the core version.
 
 ---
 
@@ -34,6 +34,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 - [ ] Kafka — async event pipeline for analysis jobs (decouples journal-write from LLM-call)
 - [ ] CI/CD — GitHub Actions: lint → test → build → deploy on push to `main`
 - [ ] JWT auth + multi-user isolation
+- [ ] MongoDB replica set (built into Atlas by default) + a look at sharding for future scale
 - [ ] Horizontal scaling readiness (stateless API servers behind a load balancer)
 
 ---
@@ -42,17 +43,16 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 | Layer | Choice | Why |
 |---|---|---|
-| Backend | **Node.js + Express.js** (primary) | Fast to build REST APIs, huge ecosystem, easy to add middleware (rate limit, auth) |
-| Backend (alt/microservice) | **Python FastAPI** | Optional — use it later if you want to isolate the LLM-calling service from the main CRUD API (good excuse to practice polyglot microservices) |
-| Frontend | **React** (Vite) + Tailwind CSS | Simple state management is enough for this scope; Tailwind keeps UI fast since "UI quality is not important" |
-| Database | **PostgreSQL** | Relational fits journal entries + users + emotion tags well; free tier available everywhere (Supabase/Neon/Railway) |
+| Backend | **Node.js + Express.js** | Fast to build REST APIs, huge ecosystem, easy to add middleware (rate limit, auth) |
+| Frontend | **React** (Vite) + Tailwind CSS | Simple state management is enough for this scope; Tailwind keeps UI fast since UI polish isn't the priority yet |
+| Database | **MongoDB** | Document model fits journal entries naturally (embed the analysis result inside the entry); free tier via MongoDB Atlas; matches what you're actively learning (replica sets, sharding) |
 | Cache / Rate limit | **Redis** | Cache repeated `/analyze` calls, store rate-limit counters, later used as a Kafka-adjacent job queue (BullMQ) |
 | Message queue | **Kafka** (or Redis Streams/BullMQ as a lighter substitute while learning) | Decouple "entry saved" from "LLM analysis" — write path stays fast, analysis happens async |
 | LLM Provider | **OpenRouter API** (you already have a key) | Free/cheap access to multiple models (e.g. `mistralai/mistral-7b-instruct:free`, `meta-llama/llama-3.1-8b-instruct:free`) through one unified API |
 | Auth | **JWT** | Needed the moment you support multiple real users, not just a `userId` string in the body |
 | Containerization | **Docker + Docker Compose** | One command (`docker compose up`) runs API + DB + Redis + frontend together |
 | CI/CD | **GitHub Actions** | Auto-run tests + build on every push; auto-deploy on merge to `main` |
-| Deployment | Backend → Render/Railway. Frontend → Vercel. DB → Supabase/Neon (managed Postgres). Redis → Upstash (free tier). | All have generous free tiers, so the whole stack can be deployed at $0 to start |
+| Deployment | Backend → Render/Railway. Frontend → Vercel. DB → MongoDB Atlas (free tier, replica set included). Redis → Upstash (free tier). | All have generous free tiers, so the whole stack can be deployed at $0 to start |
 
 ---
 
@@ -60,11 +60,11 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 ```
 ┌─────────────┐        ┌──────────────────┐       ┌────────────────────┐
-│   React     │  HTTP  │  Express API      │  SQL  │  PostgreSQL        │
-│  Frontend   │ ─────► │  (auth, CRUD,     │ ─────►│  users / entries / │
-│  (Vercel)   │        │   rate-limit)     │       │  analysis          │
-└─────────────┘        └────────┬─────────┘       └────────────────────┘
-                                 │
+│   React     │  HTTP  │  Express API      │ Mongo │  MongoDB            │
+│  Frontend   │ ─────► │  (auth, CRUD,     │Driver ►│  users /            │
+│  (Vercel)   │        │   rate-limit)     │       │  journalEntries      │
+└─────────────┘        └────────┬─────────┘       │  (analysis embedded) │
+                                 │                  └────────────────────┘
                         ┌────────▼─────────┐        ┌───────────────┐
                         │  Redis            │◄──────►│  Rate limiter │
                         │  (cache + queue)   │        │  counters     │
@@ -77,14 +77,14 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
                                  │ consumed by
                         ┌────────▼─────────┐        ┌───────────────┐
                         │  Analysis Worker   │ ─────►│  OpenRouter   │
-                        │  (Node or FastAPI) │        │  LLM API      │
+                        │  (Node.js)         │        │  LLM API      │
                         └────────┬─────────┘        └───────────────┘
                                  │ writes result back
                                  ▼
-                        PostgreSQL (analysis table) + Redis (cache)
+                        MongoDB (embedded in entry doc) + Redis (cache)
 ```
 
-For the MVP you can build the **top half only** (Frontend → API → Postgres, with a direct synchronous call to OpenRouter inside `/analyze`). The Kafka/worker half is the "v2, learn async processing" layer — add it once the MVP works end-to-end.
+For the first working version you can build the **top half only** (Frontend → API → MongoDB, with a direct synchronous call to OpenRouter inside `/analyze`). The Kafka/worker half is the "v2, learn async processing" layer — add it once the core version works end-to-end.
 
 ---
 
@@ -107,10 +107,10 @@ mindgrove/
 │   │   │   ├── auth.middleware.js
 │   │   │   └── rateLimiter.middleware.js
 │   │   ├── models/
-│   │   │   ├── entry.model.js
-│   │   │   └── user.model.js
+│   │   │   ├── journalEntry.model.js # Mongoose schema
+│   │   │   └── user.model.js         # Mongoose schema
 │   │   ├── db/
-│   │   │   └── index.js              # pg pool / Prisma client
+│   │   │   └── index.js              # MongoDB connection (mongoose.connect)
 │   │   └── app.js
 │   ├── worker/                       # optional: Kafka consumer for async analysis
 │   │   └── analyzeWorker.js
@@ -139,38 +139,36 @@ mindgrove/
 
 ---
 
-## 6. Database Schema (PostgreSQL)
+## 6. Database Schema (MongoDB / Mongoose)
 
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+Two collections. Analysis is **embedded** inside the journal entry document since it's a one-to-one relationship — no need for a separate collection or a join.
 
-CREATE TABLE journal_entries (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  ambience TEXT NOT NULL CHECK (ambience IN ('forest','ocean','mountain')),
-  text TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+```js
+// models/user.model.js
+const userSchema = new Schema({
+  email: { type: String, required: true, unique: true },
+  passwordHash: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
 
-CREATE TABLE analysis_results (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
-  emotion TEXT,
-  keywords TEXT[],
-  summary TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// models/journalEntry.model.js
+const journalEntrySchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  ambience: { type: String, enum: ["forest", "ocean", "mountain"], required: true },
+  text: { type: String, required: true },
+  analysis: {
+    emotion: String,
+    keywords: [String],
+    summary: String
+  },
+  createdAt: { type: Date, default: Date.now }
+});
 
-CREATE INDEX idx_entries_user_id ON journal_entries(user_id);
-CREATE INDEX idx_analysis_entry_id ON analysis_results(entry_id);
+// compound index — speeds up insights aggregation per user
+journalEntrySchema.index({ userId: 1, createdAt: -1 });
 ```
 
-`analysis_results` is a separate table (not a column on `journal_entries`) so you can cache/re-run analysis without mutating the original entry, and so `insights` queries stay fast with an index.
+Embedding `analysis` inside the entry document (instead of a separate `analysisResults` collection) means one query returns the entry *and* its analysis together — no join needed, which is exactly what MongoDB's document model is good at for one-to-one/one-to-few relationships.
 
 ---
 
@@ -182,11 +180,11 @@ CREATE INDEX idx_analysis_entry_id ON analysis_results(entry_id);
 { "userId": "123", "ambience": "forest", "text": "I felt calm today after listening to the rain." }
 
 // Response 201
-{ "id": "uuid", "userId": "123", "ambience": "forest", "text": "...", "createdAt": "..." }
+{ "id": "ObjectId", "userId": "123", "ambience": "forest", "text": "...", "createdAt": "..." }
 ```
 
 ### `GET /api/journal/:userId`
-Returns array of all entries for that user, newest first, paginated (`?page=1&limit=20`) once you go past MVP.
+Returns array of all entries for that user, newest first, paginated (`?page=1&limit=20`) once you go past the core version.
 
 ### `POST /api/journal/analyze`
 ```json
@@ -196,13 +194,23 @@ Returns array of all entries for that user, newest first, paginated (`?page=1&li
 // Response 200
 { "emotion": "calm", "keywords": ["rain","nature","peace"], "summary": "User experienced relaxation during the forest session" }
 ```
-Internally: check Redis cache by hash of `text` → if miss, call OpenRouter → parse JSON → cache result (e.g. 24h TTL) → return.
+Internally: check Redis cache by hash of `text` → if miss, call OpenRouter → parse JSON → cache result (e.g. 24h TTL) → also write into the entry's `analysis` field → return.
 
 ### `GET /api/journal/insights/:userId`
 ```json
 { "totalEntries": 8, "topEmotion": "calm", "mostUsedAmbience": "forest", "recentKeywords": ["focus","nature","rain"] }
 ```
-Computed via a single aggregation query (`GROUP BY emotion`, `GROUP BY ambience`, `ORDER BY count DESC LIMIT 1`) rather than pulling all rows into app memory — this matters once a user has thousands of entries.
+Computed via a MongoDB aggregation pipeline (`$match` on userId → `$group` by `analysis.emotion` and by `ambience` → `$sort` → `$limit`) rather than pulling all documents into app memory — this matters once a user has thousands of entries.
+
+```js
+// insights.controller.js — top emotion example
+const topEmotion = await JournalEntry.aggregate([
+  { $match: { userId } },
+  { $group: { _id: "$analysis.emotion", count: { $sum: 1 } } },
+  { $sort: { count: -1 } },
+  { $limit: 1 }
+]);
+```
 
 ---
 
@@ -242,16 +250,17 @@ Wrap this in try/catch, validate the parsed shape, and fall back to a retry-with
 ## 9. Setup & Run Locally
 
 ### Prerequisites
-- Node.js 18+, PostgreSQL 14+, Redis (optional for MVP), an OpenRouter API key
+- Node.js 18+, MongoDB (local via `mongod`, or a free MongoDB Atlas cluster), Redis (optional for the core version), an OpenRouter API key
 
 ### Backend first (your plan — build & test this before touching frontend)
 ```bash
 cd backend
-cp .env.example .env        # fill in DATABASE_URL, OPENROUTER_API_KEY, REDIS_URL, JWT_SECRET
+cp .env.example .env        # fill in MONGODB_URI, OPENROUTER_API_KEY, REDIS_URL, JWT_SECRET
 npm install
-npm run migrate             # creates tables from schema above
 npm run dev                 # starts on http://localhost:5000
 ```
+Mongoose creates collections automatically the first time you insert a document — no separate migration step like SQL needs.
+
 Test each endpoint with `curl` or Postman before writing a single line of frontend code:
 ```bash
 curl -X POST http://localhost:5000/api/journal -H "Content-Type: application/json" \
@@ -277,17 +286,18 @@ docker compose up --build
 
 ## 10. Suggested Build Order (efficient, in-order roadmap)
 
-1. **DB + models** — write the schema, run migrations, seed one test user.
+1. **DB + models** — write the Mongoose schemas, connect to MongoDB (local or Atlas), seed one test user.
 2. **Journal CRUD API** (`POST /api/journal`, `GET /api/journal/:userId`) — no LLM yet, just prove storage works.
-3. **LLM analyze endpoint** — wire up OpenRouter, get real JSON back, store in `analysis_results`.
-4. **Insights endpoint** — aggregation query over stored analysis.
+3. **LLM analyze endpoint** — wire up OpenRouter, get real JSON back, store it in the entry's embedded `analysis` field.
+4. **Insights endpoint** — aggregation pipeline over stored entries.
 5. **Frontend** — one page: entry form → list → Analyze button → insights panel. Call the four endpoints in order.
 6. **Auth (JWT)** — swap the raw `userId` string for a real logged-in user; this is what makes it genuinely multi-user.
 7. **Redis caching** — cache `/analyze` by text-hash; add rate limiting middleware.
 8. **Dockerize** — Dockerfile per service + `docker-compose.yml`.
 9. **CI/CD** — GitHub Actions workflow: install → lint → test → build → deploy.
-10. **Deploy** — backend to Render/Railway, frontend to Vercel, DB to Supabase/Neon, Redis to Upstash.
-11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's optional for the MVP but valuable for understanding async architectures.
+10. **Deploy** — backend to Render/Railway, frontend to Vercel, DB to MongoDB Atlas, Redis to Upstash.
+11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's optional for the core version but valuable for understanding async architectures.
+12. **(Learning stretch) Replica sets & sharding** — MongoDB Atlas gives you a 3-node replica set by default even on the free tier; read up on how primary/secondary failover works. Sharding only matters at a much bigger data size, so treat it as a documented "here's how I'd scale this further" section in `ARCHITECTURE.md` rather than something you need to implement now.
 
 Building in this order means you always have something *runnable* at every step, which keeps momentum up and makes the project easy to demo at any point.
 
@@ -295,10 +305,11 @@ Building in this order means you always have something *runnable* at every step,
 
 ## 11. Design Rationale
 
-- **Why separate `analysis_results` from `journal_entries`?** Keeps the write path fast and lets you re-run/version analysis without touching source data.
-- **Why cache in Redis instead of just relying on Postgres?** Sub-millisecond reads for repeated identical text, and it takes load off both Postgres and OpenRouter (cost + latency).
+- **Why embed `analysis` inside `journalEntries` instead of a separate collection?** It's a one-to-one relationship — one entry has exactly one analysis. Embedding means one query returns both, no join needed.
+- **Why cache in Redis instead of just relying on MongoDB?** Sub-millisecond reads for repeated identical text, and it takes load off both MongoDB and OpenRouter (cost + latency).
 - **Why Kafka instead of just calling the LLM inline?** At scale, LLM calls are the slowest and least reliable part of the request — decoupling means a slow/failed LLM call never blocks the user's journal save, and you can retry/backoff independently.
 - **Why JWT over sessions?** Stateless auth scales horizontally without sticky sessions or a shared session store.
+- **Why MongoDB over a relational database here?** You're actively learning MongoDB (replica sets, sharding), and the data shape — a journal entry with an embedded analysis result — maps naturally onto a document rather than needing a join across tables.
 
 See `ARCHITECTURE.md` for the full scaling / cost / caching / security details.
 
@@ -307,7 +318,7 @@ See `ARCHITECTURE.md` for the full scaling / cost / caching / security details.
 ## 12. Environment Variables (`.env.example`)
 
 ```
-DATABASE_URL=postgresql://user:password@localhost:5432/mindgrove
+MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/mindgrove
 OPENROUTER_API_KEY=sk-or-xxxxxxxx
 JWT_SECRET=change-me
 REDIS_URL=redis://localhost:6379
