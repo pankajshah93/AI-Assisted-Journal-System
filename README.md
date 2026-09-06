@@ -6,7 +6,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 ## 1. Product Vision
 
-- Not just an assignment submission — structured as a real product you could grow into a startup.
+- Structured from day one as a real product you can grow into a startup, not just a demo.
 - Core loop: **Session → Journal → AI Analysis → Insights over time.**
 - Designed to scale from "1 user on your laptop" to "100k users in production" without a rewrite — that's why Redis, Kafka, and CI/CD show up in the roadmap even though they're optional for the MVP.
 
@@ -14,7 +14,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 
 ## 2. Feature List
 
-### MVP (must-have, graded)
+### MVP (core, must-have)
 - [ ] Journal entry creation (`POST /api/journal`)
 - [ ] Fetch all entries for a user (`GET /api/journal/:userId`)
 - [ ] LLM emotion analysis on a journal entry (`POST /api/journal/analyze`) — real LLM call, not hardcoded output
@@ -29,7 +29,7 @@ MindGrove lets users complete immersive nature sessions (forest / ocean / mounta
 - [ ] Docker Compose (one command spins up everything)
 - [ ] Deployed demo (Render/Railway backend + Vercel frontend)
 
-### Advanced / "learn for the future" layer (not graded, but you're adding it to learn)
+### Advanced / "learn for the future" layer
 - [ ] Redis — cache LLM results + rate-limit counters
 - [ ] Kafka — async event pipeline for analysis jobs (decouples journal-write from LLM-call)
 - [ ] CI/CD — GitHub Actions: lint → test → build → deploy on push to `main`
@@ -235,7 +235,7 @@ Journal entry: "${text}"`;
   return JSON.parse(raw.replace(/```json|```/g, "").trim());
 }
 ```
-Wrap this in try/catch, validate the parsed shape, and fall back to a retry-with-stricter-prompt if JSON parsing fails once — never fall back to a hardcoded/dummy response (the spec explicitly rejects that).
+Wrap this in try/catch, validate the parsed shape, and fall back to a retry-with-stricter-prompt if JSON parsing fails once — never fall back to a hardcoded/dummy response; a real analysis pipeline is the whole point of the product.
 
 ---
 
@@ -287,9 +287,9 @@ docker compose up --build
 8. **Dockerize** — Dockerfile per service + `docker-compose.yml`.
 9. **CI/CD** — GitHub Actions workflow: install → lint → test → build → deploy.
 10. **Deploy** — backend to Render/Railway, frontend to Vercel, DB to Supabase/Neon, Redis to Upstash.
-11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's the piece that's genuinely optional for grading but valuable for your own understanding of async architectures.
+11. **(Learning stretch) Kafka** — introduce a `journal.analyze` topic; API publishes an event on entry creation, a separate worker consumes it and calls the LLM, decoupling write-latency from LLM-latency. Do this last — it's the piece that's optional for the MVP but valuable for your own understanding of async architectures.
 
-Building in this order means you always have something *runnable* at every step, which matters both for grading ("repo doesn't run" is an instant rejection) and for your own confidence.
+Building in this order means you always have something *runnable* at every step, which keeps momentum up and makes the project easy to demo at any point.
 
 ---
 
